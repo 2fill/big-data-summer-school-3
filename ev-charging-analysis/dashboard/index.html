@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>전기차 충전 인프라 분석 · Snowflake</title>
+<style>
+  :root{
+    --bg:#0f1216; --panel:#171b21; --panel2:#1d222a; --line:#2a313b;
+    --tx:#e8ecf1; --tx2:#9aa5b4; --tx3:#6b7686;
+    --a1:#4c9aff; --a2:#5ad2b4; --a3:#f2a03d; --a4:#e4635f; --a5:#a98bf0;
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --bg:#f6f7f9; --panel:#fff; --panel2:#f0f2f5; --line:#e2e6ec;
+           --tx:#151a21; --tx2:#5a6473; --tx3:#8c96a5; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);
+       font:15px/1.6 -apple-system,BlinkMacSystemFont,"Pretendard","Apple SD Gothic Neo","Malgun Gothic",sans-serif;}
+  .wrap{max-width:1240px;margin:0 auto;padding:40px 28px 80px}
+  header{border-bottom:1px solid var(--line);padding-bottom:24px;margin-bottom:8px}
+  .eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--tx3);font-weight:600}
+  h1{font-size:30px;margin:10px 0 8px;letter-spacing:-.02em;font-weight:700}
+  .sub{color:var(--tx2);font-size:14px;max-width:780px}
+  h2{font-size:19px;margin:44px 0 4px;letter-spacing:-.01em;font-weight:650}
+  .lede{color:var(--tx2);font-size:13.5px;margin:0 0 16px;max-width:820px}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:12px;margin-top:22px}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+  .kpi .lbl{font-size:12px;color:var(--tx2);margin-bottom:7px}
+  .kpi .val{font-size:25px;font-weight:680;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .kpi .val small{font-size:13px;font-weight:500;color:var(--tx2);margin-left:3px}
+  .kpi .note{font-size:11.5px;color:var(--tx3);margin-top:5px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px;margin-top:12px}
+  .flag{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--a3);
+        border-radius:8px;padding:14px 16px;margin-top:12px;font-size:13px;color:var(--tx2)}
+  .flag b{color:var(--tx)}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th{text-align:left;font-weight:600;color:var(--tx2);font-size:12px;
+     padding:0 10px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:9px 10px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+  tr:last-child td{border-bottom:none}
+  .num{text-align:right}
+  .bar-cell{width:180px}
+  .bar{height:7px;border-radius:4px;display:block}
+  .bartrack{background:var(--panel2);border-radius:4px;height:7px;width:100%}
+  .tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11.5px;font-weight:600}
+  .t-bad{background:rgba(228,99,95,.16);color:var(--a4)}
+  .t-warn{background:rgba(242,160,61,.16);color:var(--a3)}
+  .t-ok{background:rgba(90,210,180,.16);color:var(--a2)}
+  .t-neu{background:var(--panel2);color:var(--tx2)}
+  .heat{display:grid;grid-template-columns:40px repeat(24,1fr);gap:2px;font-size:10px}
+  .hcell{aspect-ratio:1/1;border-radius:2px}
+  .hlab{color:var(--tx3);display:flex;align-items:center;justify-content:flex-end;padding-right:6px}
+  .hhdr{color:var(--tx3);text-align:center}
+  .legend{display:flex;align-items:center;gap:7px;margin-top:14px;font-size:11.5px;color:var(--tx3)}
+  .legend i{display:block;width:22px;height:9px;border-radius:2px}
+  .bars2{display:flex;flex-direction:column;gap:14px}
+  .b2row{display:grid;grid-template-columns:132px 1fr 58px;align-items:center;gap:12px;font-size:13px}
+  .b2track{background:var(--panel2);height:22px;border-radius:5px;overflow:hidden}
+  .b2fill{height:100%;border-radius:5px}
+  .hourbars{display:grid;grid-template-columns:repeat(24,1fr);gap:3px;align-items:end;height:120px;margin-top:6px}
+  .hb{background:var(--a1);border-radius:2px 2px 0 0;min-height:2px}
+  .hourlab{display:grid;grid-template-columns:repeat(24,1fr);gap:3px;font-size:9.5px;color:var(--tx3);text-align:center;margin-top:5px}
+  ul.find{margin:0;padding-left:20px;color:var(--tx2);font-size:14px;line-height:1.85}
+  ul.find b{color:var(--tx)}
+  footer{margin-top:56px;padding-top:22px;border-top:1px solid var(--line);font-size:12.5px;color:var(--tx3)}
+  .tracktabs{display:flex;gap:8px;margin-top:16px}
+  .tb{background:var(--panel);border:1px solid var(--line);color:var(--tx2);
+      padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;
+      font-family:inherit}
+  .tb.active{background:var(--a1);border-color:var(--a1);color:#fff}
+  .tnote{font-size:12.5px;color:var(--tx2);margin-bottom:14px;padding-bottom:12px;
+         border-bottom:1px solid var(--line)}
+  code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Snowflake · Geospatial Analytics</div>
+  <h1>전기차 충전 인프라 분석</h1>
+  <p class="sub">충전기 3,351대 · 충전 세션 92,406건(90일) · 20개 시군구를 Snowflake에서 결합 분석했습니다.
+     공간 집계는 H3 육각 격자(해상도 8, 반경 ≈1km)를 사용했습니다.</p>
+  <div class="kpis" id="kpis"></div>
+</header>
+
+<h2>1. 커버리지 — 지역 간 격차가 26배</h2>
+<p class="lede">충전기 1대당 전기차 대수. 전국 중앙값 <b>34.9대</b> 대비 배수를 부족지수로 정의했습니다.
+   제주시(116대)와 대구 중구(4.5대)의 격차가 <b>25.8배</b>로, 총량이 아니라 배분이 문제임을 보여줍니다.</p>
+<div class="panel">
+  <table id="covTable"><thead><tr>
+    <th>시도</th><th>시군구</th><th class="num">전기차</th><th class="num">충전기</th>
+    <th class="num">급속비중</th><th class="num">1대당 EV</th><th class="bar-cell">부족지수</th><th>등급</th>
+  </tr></thead><tbody></tbody></table>
+</div>
+
+<h2>2. 이용 패턴 — 저녁 4시간에 41% 집중</h2>
+<p class="lede">90일 세션의 요일 × 시간대 분포. 18~21시가 전체의 <b>41.2%</b>, 피크는 21시(12.1%)입니다.
+   반면 새벽 4시는 149건으로 사실상 유휴 상태입니다.</p>
+<div class="panel">
+  <div class="heat" id="heat"></div>
+  <div class="legend"><span>적음</span><i id="lg0"></i><i id="lg1"></i><i id="lg2"></i><i id="lg3"></i><i id="lg4"></i><span>많음</span></div>
+  <div style="margin-top:26px;font-size:12px;color:var(--tx2)">시간대별 합계</div>
+  <div class="hourbars" id="hourbars"></div>
+  <div class="hourlab" id="hourlab"></div>
+</div>
+<div class="flag"><b>데이터 한계</b> — 평일 일평균 13,160건 vs 주말 13,302건으로 요일 편차가 1.1%에 불과합니다.
+  실제 충전 수요는 주말 패턴이 뚜렷하게 다르므로, 이 부분은 원본 데이터의 특성으로 보입니다.
+  요일별 정책 판단에는 사용하지 마세요.</div>
+
+<h2>3. 가동률 — 지표 해석에 주의가 필요</h2>
+<p class="lede">시간 점유율(충전 시간 ÷ 운영가능 시간) 기준입니다.
+   완속이 가장 높게 나오지만 이는 <b>세션 1회가 3~8시간</b>으로 길기 때문이지 수요가 많아서가 아닙니다.
+   투자 판단에는 에너지 전달량(kWh) 기준을 함께 봐야 합니다.</p>
+<div class="panel"><div class="bars2" id="util"></div></div>
+<div class="flag"><b>지표 함정</b> — 완속 4.2% vs 급속 1.5%는 "완속이 더 잘 쓰인다"는 뜻이 아닙니다.
+  급속 1대는 같은 시간에 완속 7~19대 분량의 전력을 전달합니다.
+  <b>회전율(대당 세션 수)</b>과 <b>kWh 처리량</b>을 추가로 뽑아 비교하시길 권합니다.</div>
+
+<h2>4. 운영사별 신뢰도</h2>
+<p class="lede">통신이상 · 운영중지 · 점검중 비율. 최고 13.0% ~ 최저 10.7%로 편차는 <b>2.3%p</b>에 그쳐,
+   운영사 선택보다 전체 장애율 수준(평균 11.9%) 자체가 더 큰 문제입니다.</p>
+<div class="panel">
+  <table id="opTable"><thead><tr>
+    <th>운영사</th><th class="num">충전기</th><th class="num">통신이상</th>
+    <th class="num">운영중지</th><th class="num">점검중</th><th class="bar-cell">장애율</th><th class="num">평균용량</th>
+  </tr></thead><tbody></tbody></table>
+</div>
+
+<h2>5. 신규 입지 추천 — 2트랙</h2>
+<p class="lede">증설(혼잡형)과 신규 진입(공백형)은 성격이 다른 투자라 한 줄로 세우지 않고 트랙을 나눴습니다.
+   점수는 후보군 내 <b>백분위</b>로 환산했습니다 — 지역부하(35) + 권역혼잡(25) + 급속부재(20) + 공급희소(20).
+   분석 단위는 H3 셀 하나가 아니라 <b>중심셀 + 인접 6셀(약 3km 폭)의 권역</b>입니다.</p>
+
+<div class="tracktabs">
+  <button class="tb active" data-t="혼잡형">혼잡형 — 증설</button>
+  <button class="tb" data-t="공백형">공백형 — 신규 진입</button>
+</div>
+<div class="panel">
+  <div id="trackNote" class="tnote"></div>
+  <table id="siteTable"><thead><tr>
+    <th>순위</th><th>지역</th><th>H3 셀</th>
+    <th class="num">권역 충전기</th><th class="num">급속</th>
+    <th class="num">세션(30일)</th><th class="num">가동률</th>
+    <th class="num">시군구 1대당 EV</th><th class="bar-cell">종합점수</th>
+  </tr></thead><tbody></tbody></table>
+</div>
+
+<div class="flag"><b>해석 시 주의 2가지</b><br>
+  <b>①</b> 공백형 상위 10곳 중 <b>6곳이 권역 충전기 1대</b>입니다. 이 권역의 가동률(제주시 15.2% 등)은
+  충전기 단 1대의 실적이라 통계적으로 불안정합니다 — 순위 근거로는 <b>지역부하·공급희소</b> 점수만 신뢰하고,
+  가동률은 참고 지표로만 보세요.<br>
+  <b>②</b> 20곳 전부 A등급으로 표시되지만 이는 <b>등급 임계값(70/55/40)이 잘못 설정된 것</b>입니다.
+  백분위 점수는 후보군 내 상대값이라 상위 10개를 뽑으면 당연히 높게 나옵니다.
+  절대 등급 대신 <b>트랙 내 순위</b>로만 판단하세요.</div>
+
+<h2>6. 결론</h2>
+<div class="panel">
+  <ul class="find">
+    <li><b>문제는 총량이 아니라 배분</b> — 충전기 3,351대는 전기차 133,290대 대비 1:39.8로 나쁘지 않지만,
+        지역 간 격차가 <b>26배</b>(제주시 116대 vs 대구 중구 4.5대)입니다. 신규 보급보다 재배치·집중 투자가 우선입니다.</li>
+    <li><b>제주시가 단일 최우선 지역</b> — 전기차 21,000대에 충전기 181대. 공백형 트랙 1·2위를 모두 차지했고,
+        2위 구미시(96.9대)와도 차이가 큽니다. 여기 한 곳만 해소해도 전국 편차가 크게 줄어듭니다.</li>
+    <li><b>수도권은 증설, 지방은 신규 진입</b> — 혼잡형 상위는 분당·강남·서초·부천 등 수도권이 독점하고,
+        공백형 상위는 제주·구미가 차지합니다. 같은 예산이라도 두 지역에 필요한 개입이 다릅니다.</li>
+    <li><b>저녁 피크 대응이 핵심</b> — 18~21시에 세션의 <b>41.2%</b>가 몰리고 피크는 21시(12.1%)입니다.
+        심야(0~5시) 요금 인센티브로 수요를 분산하면 증설 없이도 피크를 낮출 수 있습니다.</li>
+    <li><b>장애율 11.9%는 전 운영사 공통 문제</b> — 사업자 간 차이가 2.3%p뿐입니다.
+        통신이상이 최대 원인이므로 특정 운영사 교체보다 <b>통신 모듈 표준화</b>가 효과적입니다.</li>
+  </ul>
+</div>
+
+<h2>7. 분석 한계</h2>
+<div class="panel">
+  <ul class="find">
+    <li><b>요일 패턴 없음</b> — 평일 13,160건 vs 주말 13,302건(차이 1.1%). 요일별 판단에는 사용 불가.</li>
+    <li><b>가동률은 시간 점유율 기준</b> — 완속이 높게 나오는 건 세션이 3~8시간으로 길기 때문입니다.
+        투자 판단에는 kWh 처리량 기준을 병행해야 합니다.</li>
+    <li><b>셀 단위 수요는 세션 실적 대리변수</b> — 인구·상업시설 밀도 데이터가 없어 실현 수요로 대체했습니다.
+        기존 충전기가 없는 곳의 잠재 수요는 과소평가됩니다.</li>
+    <li><b>스코어링 3차 개정</b> — v1은 충전기 1대 셀이 자동 만점, v2는 저밀도 지역이 필터에서 탈락하는
+        편향이 있었습니다. 현재 v3는 트랙 분리 + 백분위 정규화로 두 문제를 해소했습니다.</li>
+  </ul>
+</div>
+<footer>
+  Snowflake · H3 해상도 8(≈1km) 격자 집계 · 세션 90일 / 가동률 30일 기준<br>
+  쿼리: <code>ev_charging_analysis.sql</code> · 데이터 추출: <code>09_export_for_dashboard.sql</code>
+</footer>
+</div>
+
+<script>
+const D = {"cov":[{"chargers":181,"ev":21000,"ev_per_charger":116,"fast":64,"idx":3.32,"q":1,"sido":"제주","sigungu":"제주시"},{"chargers":32,"ev":3100,"ev_per_charger":96.9,"fast":10,"idx":2.77,"q":1,"sido":"경북","sigungu":"구미시"},{"chargers":30,"ev":2400,"ev_per_charger":80,"fast":15,"idx":2.29,"q":1,"sido":"서울","sigungu":"강북구"},{"chargers":214,"ev":12400,"ev_per_charger":57.9,"fast":83,"idx":1.66,"q":1,"sido":"경기","sigungu":"성남시분당구"},{"chargers":207,"ev":11800,"ev_per_charger":57,"fast":64,"idx":1.63,"q":2,"sido":"서울","sigungu":"강남구"},{"chargers":184,"ev":9100,"ev_per_charger":49.5,"fast":60,"idx":1.42,"q":2,"sido":"경기","sigungu":"부천시"},{"chargers":197,"ev":9600,"ev_per_charger":48.7,"fast":64,"idx":1.39,"q":2,"sido":"서울","sigungu":"서초구"},{"chargers":185,"ev":8900,"ev_per_charger":48.1,"fast":69,"idx":1.38,"q":2,"sido":"경기","sigungu":"용인시수지구"},{"chargers":213,"ev":10200,"ev_per_charger":47.9,"fast":69,"idx":1.37,"q":3,"sido":"서울","sigungu":"송파구"},{"chargers":202,"ev":7300,"ev_per_charger":36.1,"fast":88,"idx":1.03,"q":3,"sido":"인천","sigungu":"연수구"},{"chargers":201,"ev":6800,"ev_per_charger":33.8,"fast":64,"idx":0.97,"q":3,"sido":"대전","sigungu":"유성구"},{"chargers":192,"ev":5400,"ev_per_charger":28.1,"fast":81,"idx":0.8,"q":3,"sido":"광주","sigungu":"광산구"},{"chargers":206,"ev":5600,"ev_per_charger":27.2,"fast":87,"idx":0.78,"q":4,"sido":"경기","sigungu":"고양시일산동구"},{"chargers":193,"ev":4700,"ev_per_charger":24.4,"fast":69,"idx":0.7,"q":4,"sido":"경기","sigungu":"수원시장안구"},{"chargers":220,"ev":5100,"ev_per_charger":23.2,"fast":90,"idx":0.66,"q":4,"sido":"서울","sigungu":"마포구"},{"chargers":31,"ev":620,"ev_per_charger":20,"fast":15,"idx":0.57,"q":4,"sido":"경기","sigungu":"동두천시"},{"chargers":217,"ev":4200,"ev_per_charger":19.4,"fast":73,"idx":0.56,"q":5,"sido":"부산","sigungu":"해운대구"},{"chargers":202,"ev":3900,"ev_per_charger":19.3,"fast":81,"idx":0.55,"q":5,"sido":"충북","sigungu":"청주시흥덕구"},{"chargers":27,"ev":210,"ev_per_charger":7.8,"fast":11,"idx":0.22,"q":5,"sido":"경기","sigungu":"연천군"},{"chargers":217,"ev":980,"ev_per_charger":4.5,"fast":101,"idx":0.13,"q":5,"sido":"대구","sigungu":"중구"}],"kpi":{"fast_chargers":1258,"fast_pct":37.5,"faulty":400,"healthy_pct":86.8,"operators":7,"total_chargers":3351,"total_mw":132.3,"total_stations":1457},"ops":[{"avg_kw":40.4,"comm":27,"fault_pct":13,"maint":14,"n":470,"op":"GS차지비","stop":20},{"avg_kw":36.5,"comm":22,"fault_pct":12.6,"maint":14,"n":459,"op":"SK일렉링크","stop":22},{"avg_kw":40.8,"comm":29,"fault_pct":12.6,"maint":17,"n":491,"op":"파워큐브","stop":16},{"avg_kw":38.8,"comm":27,"fault_pct":12.2,"maint":22,"n":518,"op":"한국전력","stop":14},{"avg_kw":38.4,"comm":24,"fault_pct":11.6,"maint":13,"n":491,"op":"환경부","stop":20},{"avg_kw":41.5,"comm":29,"fault_pct":10.8,"maint":10,"n":483,"op":"차지비","stop":13},{"avg_kw":39.7,"comm":22,"fault_pct":10.7,"maint":8,"n":439,"op":"에스트래픽","stop":17}],"sites":[{"cell":"8830d1c60dfffff","chargers":1,"est_ev":122,"region":"제주 제주시","score":83.1,"util":15.2},{"cell":"8830d1566dfffff","chargers":1,"est_ev":122,"region":"제주 제주시","score":83.1,"util":15.2},{"cell":"8830d11157fffff","chargers":1,"est_ev":122,"region":"제주 제주시","score":79.6,"util":11.1},{"cell":"8830d1553bfffff","chargers":1,"est_ev":122,"region":"제주 제주시","score":78.8,"util":10.2},{"cell":"8830d14605fffff","chargers":1,"est_ev":122,"region":"제주 제주시","score":78.4,"util":9.8},{"cell":"8830d1c109fffff","chargers":1,"est_ev":122,"region":"제주 제주시","score":77.9,"util":9.2},{"cell":"8830e1c817fffff","chargers":1,"est_ev":215,"region":"서울 강남구","score":77.6,"util":8.9},{"cell":"8830d1cd1dfffff","chargers":1,"est_ev":122,"region":"제주 제주시","score":77.6,"util":8.8},{"cell":"8830e1c8c1fffff","chargers":1,"est_ev":138,"region":"서울 송파구","score":77.4,"util":8.7},{"cell":"8830d1cdbdfffff","chargers":1,"est_ev":122,"region":"제주 제주시","score":76.9,"util":8.1}],"util":[{"kw":7,"n":2093,"tier":"완속","util":4.2},{"kw":133,"n":662,"tier":"초급속","util":2},{"kw":50,"n":596,"tier":"급속","util":1.5}],"heat":[{"dow":1,"hour":0,"n":171},{"dow":1,"hour":1,"n":158},{"dow":1,"hour":2,"n":220},{"dow":1,"hour":3,"n":355},{"dow":1,"hour":4,"n":28},{"dow":1,"hour":5,"n":59},{"dow":1,"hour":6,"n":49},{"dow":1,"hour":7,"n":885},{"dow":1,"hour":8,"n":495},{"dow":1,"hour":9,"n":1192},{"dow":1,"hour":10,"n":41},{"dow":1,"hour":11,"n":490},{"dow":1,"hour":12,"n":667},{"dow":1,"hour":13,"n":887},{"dow":1,"hour":14,"n":1014},{"dow":1,"hour":15,"n":767},{"dow":1,"hour":16,"n":89},{"dow":1,"hour":17,"n":27},{"dow":1,"hour":18,"n":1417},{"dow":1,"hour":19,"n":1536},{"dow":1,"hour":20,"n":960},{"dow":1,"hour":21,"n":1599},{"dow":1,"hour":22,"n":174},{"dow":1,"hour":23,"n":104},{"dow":2,"hour":0,"n":155},{"dow":2,"hour":1,"n":180},{"dow":2,"hour":2,"n":255},{"dow":2,"hour":3,"n":334},{"dow":2,"hour":4,"n":17},{"dow":2,"hour":5,"n":40},{"dow":2,"hour":6,"n":59},{"dow":2,"hour":7,"n":860},{"dow":2,"hour":8,"n":521},{"dow":2,"hour":9,"n":1216},{"dow":2,"hour":10,"n":47},{"dow":2,"hour":11,"n":505},{"dow":2,"hour":12,"n":652},{"dow":2,"hour":13,"n":803},{"dow":2,"hour":14,"n":1030},{"dow":2,"hour":15,"n":806},{"dow":2,"hour":16,"n":79},{"dow":2,"hour":17,"n":18},{"dow":2,"hour":18,"n":1383},{"dow":2,"hour":19,"n":1577},{"dow":2,"hour":20,"n":972},{"dow":2,"hour":21,"n":1597},{"dow":2,"hour":22,"n":183},{"dow":2,"hour":23,"n":97},{"dow":3,"hour":0,"n":147},{"dow":3,"hour":1,"n":170},{"dow":3,"hour":2,"n":233},{"dow":3,"hour":3,"n":307},{"dow":3,"hour":4,"n":21},{"dow":3,"hour":5,"n":38},{"dow":3,"hour":6,"n":60},{"dow":3,"hour":7,"n":813},{"dow":3,"hour":8,"n":457},{"dow":3,"hour":9,"n":1088},{"dow":3,"hour":10,"n":43},{"dow":3,"hour":11,"n":460},{"dow":3,"hour":12,"n":571},{"dow":3,"hour":13,"n":729},{"dow":3,"hour":14,"n":937},{"dow":3,"hour":15,"n":718},{"dow":3,"hour":16,"n":85},{"dow":3,"hour":17,"n":27},{"dow":3,"hour":18,"n":1330},{"dow":3,"hour":19,"n":1387},{"dow":3,"hour":20,"n":906},{"dow":3,"hour":21,"n":1539},{"dow":3,"hour":22,"n":198},{"dow":3,"hour":23,"n":85},{"dow":4,"hour":0,"n":177},{"dow":4,"hour":1,"n":189},{"dow":4,"hour":2,"n":271},{"dow":4,"hour":3,"n":347},{"dow":4,"hour":4,"n":18},{"dow":4,"hour":5,"n":54},{"dow":4,"hour":6,"n":68},{"dow":4,"hour":7,"n":836},{"dow":4,"hour":8,"n":494},{"dow":4,"hour":9,"n":1185},{"dow":4,"hour":10,"n":45},{"dow":4,"hour":11,"n":529},{"dow":4,"hour":12,"n":640},{"dow":4,"hour":13,"n":817},{"dow":4,"hour":14,"n":1104},{"dow":4,"hour":15,"n":829},{"dow":4,"hour":16,"n":99},{"dow":4,"hour":17,"n":31},{"dow":4,"hour":18,"n":1399},{"dow":4,"hour":19,"n":1487},{"dow":4,"hour":20,"n":940},{"dow":4,"hour":21,"n":1633},{"dow":4,"hour":22,"n":212},{"dow":4,"hour":23,"n":100},{"dow":5,"hour":0,"n":143},{"dow":5,"hour":1,"n":178},{"dow":5,"hour":2,"n":265},{"dow":5,"hour":3,"n":352},{"dow":5,"hour":4,"n":21},{"dow":5,"hour":5,"n":53},{"dow":5,"hour":6,"n":55},{"dow":5,"hour":7,"n":850},{"dow":5,"hour":8,"n":534},{"dow":5,"hour":9,"n":1173},{"dow":5,"hour":10,"n":54},{"dow":5,"hour":11,"n":468},{"dow":5,"hour":12,"n":629},{"dow":5,"hour":13,"n":789},{"dow":5,"hour":14,"n":1029},{"dow":5,"hour":15,"n":756},{"dow":5,"hour":16,"n":78},{"dow":5,"hour":17,"n":22},{"dow":5,"hour":18,"n":1381},{"dow":5,"hour":19,"n":1480},{"dow":5,"hour":20,"n":940},{"dow":5,"hour":21,"n":1633},{"dow":5,"hour":22,"n":180},{"dow":5,"hour":23,"n":116},{"dow":6,"hour":0,"n":174},{"dow":6,"hour":1,"n":171},{"dow":6,"hour":2,"n":250},{"dow":6,"hour":3,"n":348},{"dow":6,"hour":4,"n":24},{"dow":6,"hour":5,"n":46},{"dow":6,"hour":6,"n":57},{"dow":6,"hour":7,"n":882},{"dow":6,"hour":8,"n":483},{"dow":6,"hour":9,"n":1158},{"dow":6,"hour":10,"n":65},{"dow":6,"hour":11,"n":504},{"dow":6,"hour":12,"n":633},{"dow":6,"hour":13,"n":798},{"dow":6,"hour":14,"n":1076},{"dow":6,"hour":15,"n":807},{"dow":6,"hour":16,"n":83},{"dow":6,"hour":17,"n":17},{"dow":6,"hour":18,"n":1481},{"dow":6,"hour":19,"n":1540},{"dow":6,"hour":20,"n":934},{"dow":6,"hour":21,"n":1595},{"dow":6,"hour":22,"n":186},{"dow":6,"hour":23,"n":141},{"dow":7,"hour":0,"n":190},{"dow":7,"hour":1,"n":180},{"dow":7,"hour":2,"n":249},{"dow":7,"hour":3,"n":291},{"dow":7,"hour":4,"n":20},{"dow":7,"hour":5,"n":47},{"dow":7,"hour":6,"n":62},{"dow":7,"hour":7,"n":858},{"dow":7,"hour":8,"n":510},{"dow":7,"hour":9,"n":1138},{"dow":7,"hour":10,"n":43},{"dow":7,"hour":11,"n":450},{"dow":7,"hour":12,"n":629},{"dow":7,"hour":13,"n":789},{"dow":7,"hour":14,"n":1049},{"dow":7,"hour":15,"n":811},{"dow":7,"hour":16,"n":87},{"dow":7,"hour":17,"n":23},{"dow":7,"hour":18,"n":1379},{"dow":7,"hour":19,"n":1513},{"dow":7,"hour":20,"n":914},{"dow":7,"hour":21,"n":1585},{"dow":7,"hour":22,"n":211},{"dow":7,"hour":23,"n":123}],"sites_v2":[{"region":"경기 성남시분당구","cell":"8830e026d3fffff","chargers":13,"fast":2,"fast_pct":15.0,"sessions":106,"spcd":0.27,"util":5.0,"epc":57.9,"s_region":33.8,"s_cong":10.0,"s_fast":13.8,"s_sparse":15.0,"score":72.7,"grade":"A"},{"region":"서울 강남구","cell":"8830e1c863fffff","chargers":16,"fast":2,"fast_pct":13.0,"sessions":184,"spcd":0.38,"util":4.8,"epc":57.0,"s_region":33.3,"s_cong":9.7,"s_fast":15.0,"s_sparse":14.7,"score":72.6,"grade":"A"},{"region":"경기 성남시분당구","cell":"8830e15069fffff","chargers":8,"fast":2,"fast_pct":25.0,"sessions":104,"spcd":0.43,"util":6.0,"epc":57.9,"s_region":33.8,"s_cong":12.0,"s_fast":10.0,"s_sparse":15.0,"score":70.8,"grade":"A"},{"region":"서울 강남구","cell":"8830e1c8edfffff","chargers":10,"fast":2,"fast_pct":20.0,"sessions":104,"spcd":0.35,"util":5.0,"epc":57.0,"s_region":33.3,"s_cong":10.0,"s_fast":12.0,"s_sparse":15.0,"score":70.3,"grade":"A"},{"region":"서울 서초구","cell":"8830e1ca67fffff","chargers":10,"fast":1,"fast_pct":10.0,"sessions":134,"spcd":0.45,"util":4.6,"epc":48.7,"s_region":28.4,"s_cong":9.3,"s_fast":16.0,"s_sparse":15.0,"score":68.7,"grade":"B"},{"region":"서울 서초구","cell":"8830e1ca35fffff","chargers":19,"fast":2,"fast_pct":11.0,"sessions":195,"spcd":0.34,"util":4.9,"epc":48.7,"s_region":28.4,"s_cong":9.7,"s_fast":15.8,"s_sparse":13.7,"score":67.6,"grade":"B"},{"region":"경기 용인시수지구","cell":"8830e15a45fffff","chargers":10,"fast":2,"fast_pct":20.0,"sessions":116,"spcd":0.39,"util":6.0,"epc":48.1,"s_region":28.1,"s_cong":12.0,"s_fast":12.0,"s_sparse":15.0,"score":67.0,"grade":"B"},{"region":"경기 부천시","cell":"8830e0af61fffff","chargers":15,"fast":2,"fast_pct":13.0,"sessions":145,"spcd":0.32,"util":4.1,"epc":49.5,"s_region":28.8,"s_cong":8.1,"s_fast":14.7,"s_sparse":15.0,"score":66.7,"grade":"B"},{"region":"경기 부천시","cell":"8830e0af0dfffff","chargers":11,"fast":2,"fast_pct":18.0,"sessions":134,"spcd":0.41,"util":5.0,"epc":49.5,"s_region":28.8,"s_cong":10.1,"s_fast":12.7,"s_sparse":15.0,"score":66.6,"grade":"B"},{"region":"서울 송파구","cell":"8830e1cf05fffff","chargers":14,"fast":2,"fast_pct":14.0,"sessions":108,"spcd":0.26,"util":4.7,"epc":47.9,"s_region":27.9,"s_cong":9.4,"s_fast":14.3,"s_sparse":15.0,"score":66.6,"grade":"B"},{"region":"서울 송파구","cell":"8830e1c1a5fffff","chargers":19,"fast":2,"fast_pct":11.0,"sessions":161,"spcd":0.28,"util":4.2,"epc":47.9,"s_region":27.9,"s_cong":8.4,"s_fast":15.8,"s_sparse":13.7,"score":65.8,"grade":"B"},{"region":"경기 용인시수지구","cell":"8830e02481fffff","chargers":9,"fast":2,"fast_pct":22.0,"sessions":114,"spcd":0.42,"util":5.2,"epc":48.1,"s_region":28.1,"s_cong":10.4,"s_fast":11.1,"s_sparse":15.0,"score":64.5,"grade":"B"},{"region":"서울 강북구","cell":"8830e1c245fffff","chargers":9,"fast":4,"fast_pct":44.0,"sessions":129,"spcd":0.48,"util":4.2,"epc":80.0,"s_region":35.0,"s_cong":8.4,"s_fast":2.2,"s_sparse":15.0,"score":60.6,"grade":"B"},{"region":"서울 강북구","cell":"8830e1c241fffff","chargers":9,"fast":4,"fast_pct":44.0,"sessions":127,"spcd":0.47,"util":4.0,"epc":80.0,"s_region":35.0,"s_cong":8.0,"s_fast":2.2,"s_sparse":15.0,"score":60.3,"grade":"B"},{"region":"인천 연수구","cell":"8830e0a837fffff","chargers":12,"fast":2,"fast_pct":17.0,"sessions":121,"spcd":0.34,"util":4.8,"epc":36.1,"s_region":21.1,"s_cong":9.5,"s_fast":13.3,"s_sparse":15.0,"score":58.9,"grade":"B"},{"region":"인천 연수구","cell":"8830e0a821fffff","chargers":8,"fast":2,"fast_pct":25.0,"sessions":100,"spcd":0.42,"util":4.3,"epc":36.1,"s_region":21.1,"s_cong":8.6,"s_fast":10.0,"s_sparse":15.0,"score":54.7,"grade":"C"},{"region":"경기 수원시장안구","cell":"8830e02099fffff","chargers":15,"fast":2,"fast_pct":13.0,"sessions":116,"spcd":0.26,"util":4.2,"epc":24.4,"s_region":14.2,"s_cong":8.4,"s_fast":14.7,"s_sparse":15.0,"score":52.3,"grade":"C"},{"region":"경기 수원시장안구","cell":"8830e02091fffff","chargers":14,"fast":2,"fast_pct":14.0,"sessions":100,"spcd":0.24,"util":3.5,"epc":24.4,"s_region":14.2,"s_cong":7.0,"s_fast":14.3,"s_sparse":15.0,"score":50.5,"grade":"C"},{"region":"부산 해운대구","cell":"8830c16cc3fffff","chargers":11,"fast":2,"fast_pct":18.0,"sessions":134,"spcd":0.41,"util":4.5,"epc":19.4,"s_region":11.3,"s_cong":9.0,"s_fast":12.7,"s_sparse":15.0,"score":48.1,"grade":"C"},{"region":"서울 마포구","cell":"8830e1da39fffff","chargers":13,"fast":3,"fast_pct":23.0,"sessions":121,"spcd":0.31,"util":4.4,"epc":23.2,"s_region":13.5,"s_cong":8.8,"s_fast":10.8,"s_sparse":15.0,"score":48.0,"grade":"C"}],"sites_v3":[{"track":"공백형","rank":1,"region":"제주 제주시","cell":"8830d1c60dfffff","chargers":1,"fast":0,"sessions":20,"util":15.2,"epc":116.0,"s_region":30.1,"s_cong":25.0,"s_fast":15.0,"s_sparse":16.1,"score":86.2},{"track":"공백형","rank":2,"region":"제주 제주시","cell":"8830d1566dfffff","chargers":1,"fast":0,"sessions":22,"util":15.2,"epc":116.0,"s_region":30.1,"s_cong":25.0,"s_fast":15.0,"s_sparse":16.1,"score":86.2},{"track":"공백형","rank":3,"region":"경북 구미시","cell":"8830c515b1fffff","chargers":1,"fast":0,"sessions":16,"util":11.6,"epc":96.9,"s_region":29.1,"s_cong":25.0,"s_fast":15.0,"s_sparse":16.1,"score":85.2},{"track":"공백형","rank":4,"region":"경북 구미시","cell":"8830c53b4bfffff","chargers":1,"fast":0,"sessions":8,"util":7.1,"epc":96.9,"s_region":29.1,"s_cong":24.4,"s_fast":15.0,"s_sparse":16.1,"score":84.7},{"track":"공백형","rank":5,"region":"서울 강북구","cell":"8830e1c231fffff","chargers":1,"fast":0,"sessions":5,"util":4.3,"epc":80.0,"s_region":28.5,"s_cong":20.2,"s_fast":15.0,"s_sparse":16.1,"score":79.9},{"track":"공백형","rank":6,"region":"경기 성남시분당구","cell":"8830e15203fffff","chargers":2,"fast":0,"sessions":19,"util":6.4,"epc":57.9,"s_region":27.2,"s_cong":24.0,"s_fast":15.0,"s_sparse":12.8,"score":79.0},{"track":"공백형","rank":7,"region":"경기 성남시분당구","cell":"8830e02685fffff","chargers":4,"fast":0,"sessions":26,"util":4.8,"epc":57.9,"s_region":27.2,"s_cong":21.7,"s_fast":15.0,"s_sparse":8.0,"score":71.9},{"track":"공백형","rank":8,"region":"경기 부천시","cell":"8830e0ac49fffff","chargers":4,"fast":0,"sessions":30,"util":5.2,"epc":49.5,"s_region":25.4,"s_cong":22.5,"s_fast":15.0,"s_sparse":8.0,"score":70.9},{"track":"공백형","rank":9,"region":"대전 유성구","cell":"8830e36107fffff","chargers":1,"fast":0,"sessions":7,"util":5.4,"epc":33.8,"s_region":16.6,"s_cong":22.9,"s_fast":15.0,"s_sparse":16.1,"score":70.6},{"track":"공백형","rank":10,"region":"서울 강북구","cell":"8830e1c045fffff","chargers":4,"fast":1,"sessions":41,"util":4.9,"epc":80.0,"s_region":28.5,"s_cong":22.0,"s_fast":11.9,"s_sparse":8.0,"score":70.4},{"track":"혼잡형","rank":1,"region":"경기 성남시분당구","cell":"8830e15069fffff","chargers":8,"fast":2,"sessions":104,"util":6.0,"epc":57.9,"s_region":30.4,"s_cong":25.0,"s_fast":16.8,"s_sparse":17.8,"score":90.0},{"track":"혼잡형","rank":2,"region":"경기 성남시분당구","cell":"8830e15317fffff","chargers":8,"fast":2,"sessions":104,"util":5.7,"epc":57.9,"s_region":30.4,"s_cong":24.9,"s_fast":16.8,"s_sparse":17.8,"score":89.9},{"track":"혼잡형","rank":3,"region":"서울 강남구","cell":"8830e1c88dfffff","chargers":8,"fast":2,"sessions":119,"util":4.8,"epc":57.0,"s_region":27.0,"s_cong":23.6,"s_fast":16.8,"s_sparse":17.8,"score":85.3},{"track":"혼잡형","rank":4,"region":"서울 강남구","cell":"8830e1c8edfffff","chargers":10,"fast":2,"sessions":104,"util":5.0,"epc":57.0,"s_region":27.0,"s_cong":24.3,"s_fast":18.8,"s_sparse":14.9,"score":85.0},{"track":"혼잡형","rank":5,"region":"경기 부천시","cell":"8830e0af05fffff","chargers":10,"fast":2,"sessions":103,"util":5.2,"epc":49.5,"s_region":24.5,"s_cong":24.6,"s_fast":18.8,"s_sparse":14.9,"score":82.7},{"track":"혼잡형","rank":6,"region":"경기 부천시","cell":"8830e0ad4bfffff","chargers":8,"fast":2,"sessions":108,"util":4.5,"epc":49.5,"s_region":24.5,"s_cong":22.6,"s_fast":16.8,"s_sparse":17.8,"score":81.7},{"track":"혼잡형","rank":7,"region":"서울 서초구","cell":"8830e1cb67fffff","chargers":8,"fast":2,"sessions":108,"util":5.3,"epc":48.7,"s_region":21.3,"s_cong":24.7,"s_fast":16.8,"s_sparse":17.8,"score":80.7},{"track":"혼잡형","rank":8,"region":"서울 서초구","cell":"8830e1ca67fffff","chargers":10,"fast":1,"sessions":134,"util":4.6,"epc":48.7,"s_region":21.3,"s_cong":23.0,"s_fast":20.0,"s_sparse":14.9,"score":79.3},{"track":"혼잡형","rank":9,"region":"경기 용인시수지구","cell":"8830e02485fffff","chargers":8,"fast":2,"sessions":112,"util":5.7,"epc":48.1,"s_region":18.0,"s_cong":24.8,"s_fast":16.8,"s_sparse":17.8,"score":77.5},{"track":"혼잡형","rank":10,"region":"경기 용인시수지구","cell":"8830e02481fffff","chargers":9,"fast":2,"sessions":114,"util":5.2,"epc":48.1,"s_region":18.0,"s_cong":24.6,"s_fast":18.2,"s_sparse":16.5,"score":77.3}]};
+
+/* KPI */
+const k = D.kpi;
+const KPI = [
+  {lbl:"총 충전기",   val:k.total_chargers.toLocaleString(), note:"20개 시군구"},
+  {lbl:"총 충전소",   val:k.total_stations.toLocaleString(), note:"충전소당 2.3대"},
+  {lbl:"급속 충전기", val:k.fast_chargers.toLocaleString(),  note:"50kW 이상"},
+  {lbl:"급속 비중",   val:k.fast_pct, unit:"%",              note:"완속 62.5%"},
+  {lbl:"정상 가동률", val:k.healthy_pct, unit:"%",           note:"대기+충전중"},
+  {lbl:"이상 충전기", val:k.faulty.toLocaleString(),         note:"통신이상·중지·점검"},
+  {lbl:"운영사",      val:k.operators,                       note:"공공 1 · 민간 6"},
+  {lbl:"총 설비용량", val:k.total_mw, unit:"MW",             note:"합계 출력"}
+];
+document.getElementById('kpis').innerHTML = KPI.map(x=>`
+  <div class="kpi"><div class="lbl">${x.lbl}</div>
+  <div class="val">${x.val}${x.unit?`<small>${x.unit}</small>`:''}</div>
+  <div class="note">${x.note}</div></div>`).join('');
+
+/* 커버리지 */
+const GR = {1:["① 심각 부족","t-bad"],2:["② 부족","t-warn"],3:["③ 보통","t-neu"],
+            4:["④ 여유","t-ok"],5:["⑤ 충분","t-ok"]};
+const cc = q => q<=1?"var(--a4)":q===2?"var(--a3)":q===3?"var(--a1)":"var(--a2)";
+const maxIdx = Math.max(...D.cov.map(c=>c.idx));
+document.querySelector('#covTable tbody').innerHTML = D.cov.map(c=>{
+  const [g,cls]=GR[c.q];
+  return `<tr><td style="color:var(--tx2)">${c.sido}</td><td><b>${c.sigungu}</b></td>
+   <td class="num">${c.ev.toLocaleString()}</td><td class="num">${c.chargers}</td>
+   <td class="num" style="color:var(--tx2)">${(100*c.fast/c.chargers).toFixed(0)}%</td>
+   <td class="num">${c.ev_per_charger.toFixed(1)}</td>
+   <td><div class="bartrack"><span class="bar" style="width:${(c.idx/maxIdx*100).toFixed(1)}%;background:${cc(c.q)}"></span></div>
+       <div style="font-size:11px;color:var(--tx3);margin-top:3px">${c.idx.toFixed(2)}</div></td>
+   <td><span class="tag ${cls}">${g}</span></td></tr>`;
+}).join('');
+
+/* 히트맵 */
+const DAYS=["월","화","수","목","금","토","일"];
+const grid={}; let mx=0;
+D.heat.forEach(x=>{ grid[x.dow+'-'+x.hour]=x.n; if(x.n>mx) mx=x.n; });
+const ramp=[[26,32,40],[36,72,110],[46,120,168],[62,168,190],[110,214,190]];
+function hc(t){ const x=Math.min(.999,Math.max(0,t))*(ramp.length-1), i=Math.floor(x), f=x-i;
+  const a=ramp[i], b=ramp[Math.min(i+1,ramp.length-1)];
+  return `rgb(${a.map((c,j)=>Math.round(c+(b[j]-c)*f)).join(',')})`; }
+let hh='<div></div>'+Array.from({length:24},(_,h)=>`<div class="hhdr">${h%3===0?h:''}</div>`).join('');
+for(let d=1;d<=7;d++){
+  hh+=`<div class="hlab">${DAYS[d-1]}</div>`;
+  for(let h=0;h<24;h++){ const v=grid[d+'-'+h]||0;
+    hh+=`<div class="hcell" style="background:${hc(Math.sqrt(v/mx))}" title="${DAYS[d-1]} ${h}시 · ${v.toLocaleString()}건"></div>`; }
+}
+document.getElementById('heat').innerHTML=hh;
+[0,1,2,3,4].forEach(i=>document.getElementById('lg'+i).style.background=hc(i/4));
+
+/* 시간대 합계 막대 */
+const byh=Array(24).fill(0);
+D.heat.forEach(x=>byh[x.hour]+=x.n);
+const mh=Math.max(...byh), tot=byh.reduce((a,b)=>a+b,0);
+document.getElementById('hourbars').innerHTML = byh.map((v,h)=>{
+  const peak = h>=18&&h<=21;
+  return `<div class="hb" style="height:${(v/mh*100).toFixed(1)}%;background:${peak?'var(--a3)':'var(--a1)'}"
+    title="${h}시 · ${v.toLocaleString()}건 (${(100*v/tot).toFixed(1)}%)"></div>`;
+}).join('');
+document.getElementById('hourlab').innerHTML = byh.map((_,h)=>`<div>${h%3===0?h:''}</div>`).join('');
+
+/* 가동률 */
+const COL={"완속":"var(--a3)","급속":"var(--a5)","초급속":"var(--a2)"};
+const mu=Math.max(...D.util.map(u=>u.util));
+document.getElementById('util').innerHTML = D.util.map(u=>`
+  <div class="b2row">
+    <div>${u.tier} ${u.kw}kW<div style="font-size:11px;color:var(--tx3)">${u.n.toLocaleString()}대</div></div>
+    <div class="b2track"><div class="b2fill" style="width:${(u.util/mu*100).toFixed(1)}%;background:${COL[u.tier]||'var(--a1)'}"></div></div>
+    <div class="num" style="font-weight:650">${u.util.toFixed(1)}%</div>
+  </div>`).join('');
+
+/* 운영사 */
+const mf=Math.max(...D.ops.map(o=>o.fault_pct));
+document.querySelector('#opTable tbody').innerHTML = D.ops.map(o=>`
+  <tr><td><b>${o.op}</b></td><td class="num">${o.n}</td>
+  <td class="num">${o.comm}</td><td class="num">${o.stop}</td><td class="num">${o.maint}</td>
+  <td><div class="bartrack"><span class="bar" style="width:${(o.fault_pct/mf*100).toFixed(1)}%;background:${o.fault_pct>=12.5?'var(--a4)':o.fault_pct>=11.5?'var(--a3)':'var(--a2)'}"></span></div>
+      <div style="font-size:11px;color:var(--tx3);margin-top:3px">${o.fault_pct.toFixed(1)}%</div></td>
+  <td class="num">${o.avg_kw.toFixed(1)} kW</td></tr>`).join('');
+
+/* 입지 — 2트랙 */
+const NOTE = {
+ "혼잡형":"이미 충전기가 있고 이용이 많은 권역입니다. 기존 충전소 <b>증설·급속 전환</b> 대상으로, 수요가 실증돼 투자 위험이 낮습니다. 권역 충전기 8~10대, 30일 세션 103~134건.",
+ "공백형":"충전기가 희박한 권역입니다. <b>신규 부지 확보</b> 대상으로, 수요 실적은 적지만 지역 전체 부하가 높아 잠재 수요가 큽니다. 권역 충전기 1~4대, 30일 세션 5~41건."
+};
+function renderSites(track){
+  const rows = D.sites_v3.filter(s=>s.track===track).sort((a,b)=>b.score-a.score);
+  const mx = Math.max(...rows.map(s=>s.score));
+  document.getElementById('trackNote').innerHTML = NOTE[track];
+  document.querySelector('#siteTable tbody').innerHTML = rows.map((s,i)=>`
+    <tr><td style="color:var(--tx3)">${i+1}</td><td><b>${s.region}</b></td>
+    <td style="font-family:ui-monospace,monospace;font-size:11px;color:var(--tx3)">${s.cell}</td>
+    <td class="num">${s.chargers}</td><td class="num">${s.fast}</td>
+    <td class="num">${s.sessions}</td>
+    <td class="num" style="color:${s.chargers<=1?'var(--tx3)':'var(--tx)'}">${s.util.toFixed(1)}%${s.chargers<=1?' *':''}</td>
+    <td class="num">${s.epc.toFixed(1)}</td>
+    <td><div class="bartrack"><span class="bar" style="width:${(s.score/mx*100).toFixed(1)}%;background:${track==='혼잡형'?'var(--a1)':'var(--a5)'}"></span></div>
+        <div style="font-size:11px;color:var(--tx3);margin-top:3px">${s.score.toFixed(1)}점</div></td></tr>`).join('')
+    + (track==='공백형'
+       ? '<tr><td colspan="9" style="color:var(--tx3);font-size:11.5px;border:none;padding-top:12px">* 권역 충전기 1대 기준 가동률 — 표본이 작아 참고용</td></tr>'
+       : '');
+}
+document.querySelectorAll('.tb').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.tb').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active'); renderSites(b.dataset.t);
+});
+renderSites('혼잡형');
+</script>
+</body>
+</html>
