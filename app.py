@@ -17,7 +17,7 @@ def logo_b64():
 
 ARTIFACTS = Path(__file__).parent / 'artifacts'
 
-st.set_page_config(page_title='전기차 충전 인프라 결핍 분석',
+st.set_page_config(page_title='EVen | 전기차 충전 인프라 예측 모델',
                    page_icon='🔌', layout='wide')
 
 # 색상 팔레트
@@ -77,25 +77,25 @@ st.markdown("""
   .panel .big { font-size:2rem; font-weight:800; line-height:1.1; margin:0; }
   .panel .sub { font-size:1rem; margin-top:8px; opacity:.85; }
 
-  .panel-pred {
-      background:linear-gradient(135deg,#7CB342,#558B2F); color:#fff;
-      box-shadow:0 8px 22px rgba(85,139,47,.25);
+  .panel-pred-deficit {
+      background:linear-gradient(135deg,#EF5350,#C62828); color:#fff;
+      box-shadow:0 8px 22px rgba(198,40,40,.28);
   }
-  .panel-pred .tag { color:#EAF4DC; }
+  .panel-pred-normal {
+      background:linear-gradient(135deg,#42A5F5,#1565C0); color:#fff;
+      box-shadow:0 8px 22px rgba(21,101,192,.28);
+  }
+  .panel-pred-deficit .tag, .panel-pred-normal .tag { color:rgba(255,255,255,.85); }
 
+  /* 실제 데이터 — 항상 흰 배경 점선 (예측과 역할 구분) */
   .panel-actual { background:#fff; border:2px dashed #B0BEC5; color:#37474F; }
   .panel-actual .tag { color:#78909C; }
   .panel-actual .big { color:#455A64; }
 
-  .chip { display:inline-block; padding:7px 16px; border-radius:20px;
-          font-size:.85rem; font-weight:700; }
-  .chip-deficit { background:#FFEBEE; color:#C62828; border:1px solid #FFCDD2; }
-  .chip-normal  { background:#F1F8E9; color:#33691E; border:1px solid #DCEDC8; }
-
-  .verdict { margin-top:18px; padding:14px 20px; border-radius:12px;
-             font-weight:600; font-size:.92rem; }
-  .verdict-match { background:#F1F8E9; border-left:4px solid #7CB342; color:#33691E; }
-  .verdict-miss  { background:#FFF3E0; border-left:4px solid #FB8C00; color:#E65100; }
+  .verdict { padding:16px 24px; border-radius:14px; margin-bottom:16px;
+             font-weight:800; font-size:1.15rem; text-align:center; }
+  .verdict-match { background:#F1F8E9; color:#33691E; border:2px solid #AED581; }
+  .verdict-miss  { background:#FFEBEE; color:#C62828; border:2px solid #EF9A9A; }
 
   section[data-testid="stSidebar"] { background:#FAFCF8; border-right:1px solid #E8EFE0; }
   section[data-testid="stSidebar"] h2 { font-size:1.1rem; }
@@ -392,8 +392,9 @@ st.divider()
 # ══════════════════════════════════════════════════════════
 st.markdown('<div id="simulator"></div>', unsafe_allow_html=True)
 st.header('이븐이 시뮬레이터')
-st.markdown('사이드바에서 값을 조절하면 모델이 해당 조건의 지역을 '
-            '**결핍으로 분류할 확률**을 실시간으로 계산합니다.')
+st.markdown('**전기차 등록대수 · 인구수 · 아파트 비율 · 노후주택 비율 · 주차장 확보율 · '
+            '보조금 접수율 · 예산 소진율** 일곱 가지로 충전기 부족 여부를 예측합니다.')
+st.caption('🔋 사이드바에서 값을 조절해 조건을 바꿔볼 수 있습니다.')
 
 # 시도 → 시군구 2단계 선택
 avail = region.dropna(subset=FEATURES)
@@ -447,22 +448,30 @@ X_input = np.array([[values[f] for f in FEATURES]])
 proba = float(bundle['model'].predict_proba(X_input)[0, 1])
 thresh = bundle['threshold']
 pred_deficit = proba >= thresh
-pred_txt = '결핍' if pred_deficit else '결핍 아님'
+pred_txt = '부족' if pred_deficit else '충분'
+pred_cls = 'panel-pred-deficit' if pred_deficit else 'panel-pred-normal'
 
 actual = row.get('is_deficit') if row is not None else None
 has_actual = actual is not None and pd.notna(actual)
 
 st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
+
+if has_actual:
+    match = (actual == 1) == pred_deficit
+    cls = 'verdict-match' if match else 'verdict-miss'
+    msg = '이븐이가 맞혔습니다!' if match else '이븐이가 실수했어요 ㅠㅠ'
+    st.markdown(f'<div class="verdict {cls}">{msg}</div>', unsafe_allow_html=True)
+
 col_pred, col_actual = st.columns(2)
 
 with col_pred:
     st.markdown(f"""
-    <div class="panel panel-pred">
+    <div class="panel {pred_cls}">
       <div class="tag">이븐이의 예측</div>
       <p class="big">{proba:.0%}</p>
       <div class="sub">{thresh:.0%} 넘으면 부족</div>
       <div class="sub" style="margin-top:14px;">
-        <span style="background:rgba(255,255,255,.22); padding:6px 14px;
+        <span style="background:rgba(255,255,255,.25); padding:6px 14px;
               border-radius:20px; font-weight:700;">{pred_txt}</span>
       </div>
     </div>
@@ -470,16 +479,12 @@ with col_pred:
 
 with col_actual:
     if has_actual:
-        actual_txt = '부족한 동네' if actual == 1 else '부족하지 않음'
-        chip = 'chip-deficit' if actual == 1 else 'chip-normal'
+        actual_txt = '부족' if actual == 1 else '충분'
         st.markdown(f"""
         <div class="panel panel-actual">
           <div class="tag">실제 데이터</div>
           <p class="big">{actual_txt}</p>
           <div class="sub">전국 하위 20%면 부족</div>
-          <div class="sub" style="margin-top:14px;">
-            <span class="chip {chip}">정답</span>
-          </div>
         </div>
         """, unsafe_allow_html=True)
     else:
@@ -492,9 +497,3 @@ with col_actual:
           </div>
         </div>
         """, unsafe_allow_html=True)
-
-if has_actual:
-    match = (actual == 1) == pred_deficit
-    cls = 'verdict-match' if match else 'verdict-miss'
-    msg = ('이븐이가 맞혔습니다!' if match
-           else '이븐이가 실수했어요 ㅠㅠ')
