@@ -5,6 +5,8 @@ from pathlib import Path
 import joblib
 import numpy as np
 import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 ARTIFACTS = Path(__file__).parent / 'artifacts'
@@ -12,15 +14,26 @@ ARTIFACTS = Path(__file__).parent / 'artifacts'
 st.set_page_config(page_title='전기차 충전 인프라 결핍 분석',
                    page_icon='🔌', layout='wide')
 
+# 색상 팔레트
+LIME, LIME_DARK, LIME_LIGHT = '#7CB342', '#33691E', '#AED581'
+RED, ORANGE, GRAY = '#C62828', '#FB8C00', '#90A4AE'
+GREEN_SCALE = ['#C62828', '#EF9A9A', '#F5F5F5', '#C5E1A5', '#33691E']
+
+PLOT_LAYOUT = dict(
+    font=dict(family='Pretendard, -apple-system, sans-serif', size=13),
+    plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+    margin=dict(l=10, r=10, t=40, b=10),
+    hoverlabel=dict(bgcolor='white', font_size=13),
+)
+
 # 스타일
 st.markdown("""
 <style>
   @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
 
   html, body, [class*="css"] { font-family:'Pretendard', -apple-system, sans-serif; }
-  .block-container { padding-top:2rem; max-width:1280px; }
+  .block-container { padding-top:2rem; max-width:1320px; }
 
-  /* 히어로 */
   .hero {
       background:linear-gradient(135deg,#33691E 0%,#7CB342 55%,#AED581 100%);
       border-radius:20px; padding:34px 40px; margin-bottom:26px;
@@ -32,7 +45,6 @@ st.markdown("""
 
   h2, h3 { color:#1B5E20; font-weight:700; letter-spacing:-.3px; }
 
-  /* KPI 카드 */
   div[data-testid="stMetric"] {
       background:#fff; border:1px solid #E0E8D8; border-top:3px solid #7CB342;
       padding:18px 20px; border-radius:14px;
@@ -44,7 +56,6 @@ st.markdown("""
   div[data-testid="stMetricValue"] { color:#33691E; font-weight:800; }
   div[data-testid="stMetricLabel"] { color:#7A8B6C; font-size:.82rem; font-weight:600; }
 
-  /* 탭 */
   .stTabs [data-baseweb="tab-list"] { gap:4px; border-bottom:2px solid #EDF2E7; }
   .stTabs [data-baseweb="tab"] {
       padding:10px 20px; border-radius:10px 10px 0 0;
@@ -53,40 +64,32 @@ st.markdown("""
   .stTabs [aria-selected="true"] { color:#33691E !important; background:#F1F8E9; }
   .stTabs [data-baseweb="tab-highlight"] { background-color:#7CB342; height:3px; }
 
-  /* 결과 패널 */
   .panel { border-radius:16px; padding:22px 26px; height:100%; }
   .panel .tag { font-size:.75rem; font-weight:700; letter-spacing:1px;
                 text-transform:uppercase; opacity:.8; margin-bottom:10px; }
   .panel .big { font-size:2.5rem; font-weight:800; line-height:1.1; margin:0; }
   .panel .sub { font-size:.85rem; margin-top:8px; opacity:.85; }
 
-  /* 모델 예측 = 연두 채움 */
   .panel-pred {
       background:linear-gradient(135deg,#7CB342,#558B2F); color:#fff;
       box-shadow:0 8px 22px rgba(85,139,47,.25);
   }
   .panel-pred .tag { color:#EAF4DC; }
 
-  /* 실제 라벨 = 회색 테두리 */
   .panel-actual { background:#fff; border:2px dashed #B0BEC5; color:#37474F; }
   .panel-actual .tag { color:#78909C; }
   .panel-actual .big { color:#455A64; }
 
-  /* 배지 */
   .chip { display:inline-block; padding:7px 16px; border-radius:20px;
           font-size:.85rem; font-weight:700; }
   .chip-deficit { background:#FFEBEE; color:#C62828; border:1px solid #FFCDD2; }
   .chip-normal  { background:#F1F8E9; color:#33691E; border:1px solid #DCEDC8; }
 
-  /* 일치 여부 */
   .verdict { margin-top:18px; padding:14px 20px; border-radius:12px;
              font-weight:600; font-size:.92rem; }
   .verdict-match { background:#F1F8E9; border-left:4px solid #7CB342; color:#33691E; }
   .verdict-miss  { background:#FFF3E0; border-left:4px solid #FB8C00; color:#E65100; }
 
-  .stProgress > div > div > div > div {
-      background:linear-gradient(90deg,#AED581,#558B2F);
-  }
   section[data-testid="stSidebar"] { background:#FAFCF8; border-right:1px solid #E8EFE0; }
   section[data-testid="stSidebar"] h2 { font-size:1.1rem; }
   hr { border-color:#EDF2E7; }
@@ -123,22 +126,21 @@ LABELS = {
     'subsidy_receipt_rate': '보조금 접수율 (%)',
     'budget_exec_rate': '예산 소진율 (%)',
 }
-LOG_FEATURES = {'log_reg': '대', 'log_pop': '명'}  # 원 스케일로 입력받을 변수
+LOG_FEATURES = {'log_reg': '대', 'log_pop': '명'}
 
 # ══════════════════════════════════════════════════════════
 st.markdown("""
 <div class="hero">
-  <h1>전기차 충전 인프라 결핍 분석</h1>
-  <p>시군구별 전기차 등록대수 대비 충전 인프라 과부족을 개수·가동률·혼잡도·용량 네 축에서 분석하고,<br>
-     주택·인구·보조금 지표로 결핍 지역을 예측합니다.</p>
+  <h1>EVen</h1>
+  <p>시군구별 전기차 등록대수 대비 충전 인프라 과부족을 개수·가동률·혼잡도 세 축에서 분석하고,<br>주택·인구·보조금 지표로 결핍 지역을 예측합니다.</p>
 </div>
 """, unsafe_allow_html=True)
 
 c1, c2, c3, c4 = st.columns(4)
 c1.metric('분석 시군구', f"{meta['n_panel']}개")
-c2.metric('평균 가동률', f"{meta['mean_ok_rate']:.1f}%")
+c2.metric('충전기 평균 가동률', f"{meta['mean_ok_rate']:.1f}%")
 c3.metric('3중고 지역', f"{meta['n_triple']}곳")
-c4.metric('모델 AUROC', f"{meta['auroc']:.3f}")
+c4.metric('모델 성능(AUROC)', f"{meta['auroc']:.3f}")
 
 st.divider()
 
@@ -146,57 +148,211 @@ st.divider()
 st.header('분석 결과')
 tab1, tab2, tab3, tab4 = st.tabs(['개수 갭', '가동률·혼잡도', '3중고 지역', '모델 성능'])
 
+# =================================
+# ========== 탭 1: 개수 갭 ==========
 with tab1:
-    st.markdown('충전기 절대 개수는 대도시가 유리하므로, **log-log 회귀로 규모효과를 제거한 '
-                '기대치 대비 괴리율**을 사용합니다. 음수면 기대보다 부족합니다.')
-    n_show = st.slider('표시 개수', 10, 50, 20, key='gap_n')
-    worst = region.nsmallest(n_show, 'gap_pct_total')
-    st.bar_chart(worst.set_index('지역')['gap_pct_total'], color='#7CB342')
-    st.dataframe(
-        worst[['지역', 'registration', 'total_chargers',
-               'expected_total', 'gap_pct_total']]
-        .rename(columns={'registration': '등록대수', 'total_chargers': '충전기',
-                         'expected_total': '기대치', 'gap_pct_total': '괴리율(%)'})
-        .round(1), use_container_width=True, hide_index=True)
+    st.caption('지역별 충전기 기대치 대비 괴리율(log-log 회귀 사용)')
+    st.subheader('회귀선 대비 실제 충전기 수')
+    fit = region.sort_values('registration')
+    scat = go.Figure()
+    scat.add_trace(go.Scatter(
+        x=fit['registration'], y=fit['expected_total'],
+        mode='lines', name='기대치 (회귀선)',
+        line=dict(color=LIME_DARK, width=2.5, dash='dash'),
+        hovertemplate='등록 %{x:,.0f}대 → 기대 %{y:.0f}대<extra></extra>'))
+    scat.add_trace(go.Scatter(
+        x=region['registration'], y=region['total_chargers'],
+        mode='markers', name='실제',
+        marker=dict(size=8, color=region['gap_pct_total'],
+                    colorscale=GREEN_SCALE, cmid=0, opacity=.85,
+                    line=dict(width=.5, color='white'),
+                    colorbar=dict(title='괴리율<br>(%)', thickness=14)),
+        text=region['지역'],
+        hovertemplate='<b>%{text}</b><br>등록 %{x:,.0f}대<br>'
+                      '충전기 %{y:,.0f}대<extra></extra>'))
+    scat.update_layout(**PLOT_LAYOUT, height=460, xaxis_type='log', yaxis_type='log',
+                       xaxis_title='전기차 등록대수 (로그)',
+                       yaxis_title='충전기 수 (로그)',
+                       legend=dict(orientation='h', y=1.08, x=0))
+    scat.update_xaxes(gridcolor='#EDF2E7')
+    scat.update_yaxes(gridcolor='#EDF2E7')
+    st.plotly_chart(scat, use_container_width=True)
 
+    col_a, col_b = st.columns([3, 2])
+    with col_a:
+        st.subheader('괴리율 하위 지역')
+        n_show = st.slider('표시 개수', 10, 40, 20, key='gap_n')
+        worst = region.nsmallest(n_show, 'gap_pct_total').sort_values('gap_pct_total')
+        bar = px.bar(worst, x='gap_pct_total', y='지역', orientation='h',
+                     color='gap_pct_total', color_continuous_scale=GREEN_SCALE,
+                     range_color=[-100, 100],
+                     labels={'gap_pct_total': '괴리율 (%)', '지역': ''},
+                     hover_data={'registration': ':,', 'total_chargers': ':,'})
+        bar.update_layout(**PLOT_LAYOUT, height=max(340, n_show * 22),
+                          coloraxis_showscale=False)
+        bar.update_xaxes(gridcolor='#EDF2E7', zerolinecolor='#B0BEC5')
+        st.plotly_chart(bar, use_container_width=True)
+
+    with col_b:
+        st.subheader('시도별 중앙값')
+        by_sido = (region.groupby('sido_short')['gap_pct_total']
+                   .median().sort_values().reset_index())
+        sido_bar = px.bar(by_sido, x='gap_pct_total', y='sido_short', orientation='h',
+                          color='gap_pct_total', color_continuous_scale=GREEN_SCALE,
+                          range_color=[-60, 60],
+                          labels={'gap_pct_total': '괴리율 중앙값 (%)', 'sido_short': ''})
+        sido_bar.update_layout(**PLOT_LAYOUT, height=440, coloraxis_showscale=False)
+        sido_bar.update_xaxes(gridcolor='#EDF2E7', zerolinecolor='#B0BEC5')
+        st.plotly_chart(sido_bar, use_container_width=True)
+
+# =====================================
+# ========== 탭 2: 가동률/혼잡도 ==========
 with tab2:
-    st.markdown('설치 여부와 별개로 **실제로 작동하는가**, 그리고 **얼마나 붐비는가**를 봅니다. '
-                '표본 10대 미만 시군구는 비율이 불안정해 제외했습니다.')
+    st.caption('전기차 충전기의 실제 작동 여부와 혼잡도(표본 10 미만 시군구 제거)')
+    ops = region.dropna(subset=['ok_rate', 'busy_rate'])
+
     col_a, col_b = st.columns(2)
     with col_a:
         st.subheader('가동률 하위 10')
-        low_ok = region.dropna(subset=['ok_rate']).nsmallest(10, 'ok_rate')
-        st.bar_chart(low_ok.set_index('지역')['ok_rate'], color='#7CB342')
+        low_ok = ops.nsmallest(10, 'ok_rate').sort_values('ok_rate')
+        f = px.bar(low_ok, x='ok_rate', y='지역', orientation='h',
+                   color='ok_rate', color_continuous_scale=['#C62828', '#FFB74D', LIME],
+                   labels={'ok_rate': '가동률 (%)', '지역': ''},
+                   hover_data={'broken_rate': ':.1f', 'n_reported': ':,'})
+        f.add_vline(x=ops['ok_rate'].median(), line_dash='dash', line_color=GRAY,
+                    annotation_text='중앙값')
+        f.update_layout(**PLOT_LAYOUT, height=380, coloraxis_showscale=False)
+        f.update_xaxes(gridcolor='#EDF2E7')
+        st.plotly_chart(f, use_container_width=True)
+
     with col_b:
         st.subheader('혼잡도 상위 10')
-        high_busy = region.dropna(subset=['busy_rate']).nlargest(10, 'busy_rate')
-        st.bar_chart(high_busy.set_index('지역')['busy_rate'], color='#558B2F')
+        high_busy = ops.nlargest(10, 'busy_rate').sort_values('busy_rate')
+        f = px.bar(high_busy, x='busy_rate', y='지역', orientation='h',
+                   color='busy_rate', color_continuous_scale=['#DCEDC8', LIME_DARK],
+                   labels={'busy_rate': '혼잡도 (%)', '지역': ''},
+                   hover_data={'ok_rate': ':.1f'})
+        f.add_vline(x=ops['busy_rate'].median(), line_dash='dash', line_color=GRAY,
+                    annotation_text='중앙값')
+        f.update_layout(**PLOT_LAYOUT, height=380, coloraxis_showscale=False)
+        f.update_xaxes(gridcolor='#EDF2E7')
+        st.plotly_chart(f, use_container_width=True)
 
-    st.subheader('개수 부족과 혼잡도의 관계')
-    st.scatter_chart(region.dropna(subset=['busy_rate']),
-                     x='gap_pct_total', y='busy_rate', color='#7CB342')
-    st.caption('두 축이 독립적이라면 뚜렷한 패턴이 보이지 않습니다.')
+    st.subheader('시도별 가동률 분포')
+    st.caption('상자가 길수록 시군구별 편차가 큽니다.')
+    order = ops.groupby('sido_short')['ok_rate'].median().sort_values().index
+    box = px.box(ops, x='sido_short', y='ok_rate', points='all',
+                 category_orders={'sido_short': list(order)},
+                 color_discrete_sequence=[LIME],
+                 labels={'sido_short': '', 'ok_rate': '가동률 (%)'},
+                 hover_data=['지역'])
+    box.update_traces(marker=dict(size=5, opacity=.6))
+    box.update_layout(**PLOT_LAYOUT, height=400)
+    box.update_yaxes(gridcolor='#EDF2E7')
+    st.plotly_chart(box, use_container_width=True)
 
+    st.subheader('충전기 개수와 혼잡도 관계')
+    st.caption(f'원 크기는 등록대수, 색은 가동률입니다.')
+    r_val = ops['gap_pct_total'].corr(ops['busy_rate'])
+    sc = px.scatter(ops, x='gap_pct_total', y='busy_rate',
+                    size='registration', size_max=32,
+                    color='ok_rate', color_continuous_scale=['#C62828', '#FFB74D', LIME],
+                    hover_name='지역',
+                    labels={'gap_pct_total': '괴리율 (%)', 'busy_rate': '혼잡도 (%)',
+                            'ok_rate': '가동률(%)', 'registration': '등록대수'})
+    sc.add_vline(x=0, line_dash='dash', line_color='#CFD8DC')
+    sc.update_layout(**PLOT_LAYOUT, height=440)
+    sc.update_xaxes(gridcolor='#EDF2E7')
+    sc.update_yaxes(gridcolor='#EDF2E7')
+    st.plotly_chart(sc, use_container_width=True)
+
+# ================================
+# ========== 탭 3: 3중고 ==========
 with tab3:
-    st.markdown('**개수 부족 하위 20% + 가동률 중앙값 이하 + 혼잡도 중앙값 이상**을 '
-                '동시에 만족하는 지역입니다. 정책 우선순위가 가장 높은 후보입니다.')
-    gap_cut = region['gap_pct_total'].quantile(0.20)
-    ok_med = region['ok_rate'].median()
-    busy_med = region['busy_rate'].median()
-    triple = region[(region['gap_pct_total'] <= gap_cut) &
-                    (region['ok_rate'] <= ok_med) &
-                    (region['busy_rate'] >= busy_med)]
-    st.dataframe(
-        triple[['지역', 'registration', 'gap_pct_total', 'ok_rate', 'busy_rate']]
-        .rename(columns={'registration': '등록대수', 'gap_pct_total': '괴리율(%)',
-                         'ok_rate': '가동률(%)', 'busy_rate': '혼잡도(%)'})
-        .round(1).sort_values('괴리율(%)'),
-        use_container_width=True, hide_index=True)
+    st.caption('개수 부족 하위 20% + 가동률 중앙값 이하 + 혼잡도 중앙값 이상 만족 지역')
 
+    ops = region.dropna(subset=['ok_rate', 'busy_rate'])
+    gap_cut = region['gap_pct_total'].quantile(0.20)
+    ok_med = ops['ok_rate'].median()
+    busy_med = ops['busy_rate'].median()
+
+    is_triple = ((ops['gap_pct_total'] <= gap_cut) &
+                 (ops['ok_rate'] <= ok_med) &
+                 (ops['busy_rate'] >= busy_med))
+    plot_df = ops.assign(구분=np.where(is_triple, '3중고', '해당 없음'))
+    triple = ops[is_triple]
+
+    st.subheader('괴리율-혼잡도 사분면으로 본 위험 구역')
+    st.caption('왼쪽 위로 갈수록 부족하면서 붐빕니다.')
+    q = px.scatter(plot_df, x='gap_pct_total', y='busy_rate',
+                   color='구분', size='registration', size_max=34,
+                   color_discrete_map={'3중고': RED, '해당 없음': '#CFD8DC'},
+                   hover_name='지역',
+                   hover_data={'ok_rate': ':.1f', 'registration': ':,',
+                               'gap_pct_total': ':.1f', 'busy_rate': ':.1f'},
+                   labels={'gap_pct_total': '괴리율 (%)', 'busy_rate': '혼잡도 (%)'})
+    q.add_vline(x=gap_cut, line_dash='dash', line_color=RED,
+                annotation_text='개수 부족 컷', annotation_position='top')
+    q.add_hline(y=busy_med, line_dash='dash', line_color=ORANGE,
+                annotation_text='혼잡도 중앙값', annotation_position='right')
+    q.add_vrect(x0=plot_df['gap_pct_total'].min() - 5, x1=gap_cut,
+                y0=0, y1=1, yref='paper', fillcolor=RED, opacity=.05, line_width=0)
+    q.update_layout(**PLOT_LAYOUT, height=480,
+                    legend=dict(orientation='h', y=1.08, x=0))
+    q.update_xaxes(gridcolor='#EDF2E7')
+    q.update_yaxes(gridcolor='#EDF2E7')
+    st.plotly_chart(q, use_container_width=True)
+
+    if len(triple) > 0:
+        st.subheader('3중고 지역 지표 비교')
+        st.caption('세 축 모두 바깥쪽일수록 양호합니다.')
+        radar = go.Figure()
+        for _, r in triple.iterrows():
+            radar.add_trace(go.Scatterpolar(
+                r=[max(0, 100 + r['gap_pct_total']),  # 부족할수록 작게
+                   r['ok_rate'],
+                   100 - r['busy_rate']],             # 붐빌수록 작게
+                theta=['충전기 충족도', '가동률', '여유도'],
+                fill='toself', name=r['지역'], opacity=.45))
+        radar.update_layout(**PLOT_LAYOUT, height=440,
+                            polar=dict(radialaxis=dict(visible=True, range=[0, 100],
+                                                       gridcolor='#EDF2E7')))
+        st.plotly_chart(radar, use_container_width=True)
+    else:
+        st.info('현재 기준으로 3중고에 해당하는 지역이 없습니다.')
+
+# ==================================
+# ========== 탭 4: 모델 성능 ==========
 with tab4:
-    st.markdown(f"5-fold 교차검증 · Youden's J로 임계값 결정. "
-                f"최종 선정: **{meta['best_model']}**")
-    st.dataframe(perf.round(3), use_container_width=True)
+    st.caption('최종 모델: Weighted Soft Voting(LogisticRegression+XGBoost+LightGBM)')
+
+    p = perf.reset_index()
+    p.columns = ['모델'] + list(p.columns[1:])
+    p['구분'] = np.where(p['모델'].str.contains(r'\('), '앙상블', '단일모델')
+
+    st.subheader('AUROC 순위')
+    st.caption('진한 색이 앙상블, 연한 색이 단일 모델입니다.')
+    rank = p.sort_values('AUROC')
+    f = px.bar(rank, x='AUROC', y='모델', orientation='h', color='구분',
+               color_discrete_map={'단일모델': LIME_LIGHT, '앙상블': LIME_DARK},
+               range_x=[max(0.5, rank['AUROC'].min() - .05), 1.0],
+               hover_data={'BalancedAccuracy': ':.3f', 'Sensitivity': ':.3f'})
+    f.update_layout(**PLOT_LAYOUT, height=640, showlegend=False)
+    f.update_xaxes(gridcolor='#EDF2E7')
+    st.plotly_chart(f, use_container_width=True)
+
+    st.subheader('상위 5개 지표 비교')
+    top5 = p.nlargest(5, 'AUROC')
+    metrics = ['AUROC', 'BalancedAccuracy', 'Sensitivity', 'Specificity', 'F1']
+    melted = top5.melt(id_vars='모델', value_vars=metrics,
+                        var_name='지표', value_name='값')
+    f = px.bar(melted, x='지표', y='값', color='모델', barmode='group',
+                color_discrete_sequence=[LIME_DARK, LIME, LIME_LIGHT,
+                                        '#8D6E63', '#B0BEC5'])
+    f.update_layout(**PLOT_LAYOUT, height=420, yaxis_range=[0, 1],
+                    legend=dict(orientation='h', y=-.25, x=0, font_size=11))
+    f.update_yaxes(gridcolor='#EDF2E7')
+    st.plotly_chart(f, use_container_width=True)
 
 st.divider()
 
@@ -217,14 +373,13 @@ else:
     row = None
     defaults = {f: stats[f]['median'] for f in FEATURES}
 
-# ── 입력 ─────────────────────────────────────────────────────
 st.sidebar.header('입력값 조절')
 st.sidebar.caption('슬라이더 범위는 학습 데이터의 실제 최소~최대입니다.')
 
 values = {}
 for f in FEATURES:
     s = stats[f]
-    if f in LOG_FEATURES:  # 로그 변수는 원 스케일로 입력받고 내부에서 log 변환
+    if f in LOG_FEATURES:
         lo, hi = int(np.exp(s['min'])), int(np.exp(s['max']))
         raw = st.sidebar.slider(f'{LABELS[f]} ({LOG_FEATURES[f]})',
                                 lo, hi, int(np.exp(defaults[f])),
@@ -236,7 +391,6 @@ for f in FEATURES:
             LABELS[f], float(s['min']), float(s['max']), float(defaults[f]),
             step=float(span / 100) if span else 0.01, key=f)
 
-# ── 예측 ─────────────────────────────────────────────────────
 X_input = np.array([[values[f] for f in FEATURES]])
 proba = float(bundle['model'].predict_proba(X_input)[0, 1])
 thresh = bundle['threshold']
@@ -246,7 +400,25 @@ pred_txt = '결핍' if pred_deficit else '결핍 아님'
 actual = row.get('is_deficit') if row is not None else None
 has_actual = actual is not None and pd.notna(actual)
 
-col_pred, col_actual = st.columns(2)
+col_g, col_pred, col_actual = st.columns([1.1, 1, 1])
+
+with col_g:
+    gauge = go.Figure(go.Indicator(
+        mode='gauge+number',
+        value=proba * 100,
+        number=dict(suffix='%', font=dict(size=38, color=LIME_DARK)),
+        gauge=dict(
+            axis=dict(range=[0, 100], tickcolor='#B0BEC5'),
+            bar=dict(color=LIME, thickness=.72),
+            bgcolor='#F5F7F2', borderwidth=0,
+            steps=[dict(range=[0, thresh * 100], color='#EDF2E7'),
+                   dict(range=[thresh * 100, 100], color='#FFEBEE')],
+            threshold=dict(line=dict(color=RED, width=3),
+                           thickness=.85, value=thresh * 100)),
+    ))
+    gauge.update_layout(**PLOT_LAYOUT, height=250)
+    st.plotly_chart(gauge, use_container_width=True)
+    st.caption(f'붉은 선이 판정 기준 {thresh:.1%}입니다.')
 
 with col_pred:
     st.markdown(f"""
@@ -285,8 +457,6 @@ with col_actual:
           </div>
         </div>
         """, unsafe_allow_html=True)
-
-st.progress(min(proba, 1.0))
 
 if has_actual:
     match = (actual == 1) == pred_deficit
