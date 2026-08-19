@@ -1,0 +1,58 @@
+{
+  "features": [
+    "log_reg",
+    "log_pop",
+    "apt_ratio",
+    "old_housing_ratio",
+    "parking_ratio",
+    "subsidy_receipt_rate",
+    "budget_exec_rate"
+  ],
+  "stats": {
+    "log_reg": {
+      "min": 5.2832037287379885,
+      "max": 9.61413742298365,
+      "median": 7.632884450102613
+    },
+    "log_pop": {
+      "min": 9.049584593096789,
+      "max": 13.819581261397254,
+      "median": 12.075150173686236
+    },
+    "apt_ratio": {
+      "min": 0.6,
+      "max": 92.7,
+      "median": 58.75
+    },
+    "old_housing_ratio": {
+      "min": 0.1770789594615294,
+      "max": 67.2717391304348,
+      "median": 30.620412004062228
+    },
+    "parking_ratio": {
+      "min": 44.3,
+      "max": 97.1,
+      "median": 86.0
+    },
+    "subsidy_receipt_rate": {
+      "min": 40.0,
+      "max": 945.0,
+      "median": 100.0
+    },
+    "budget_exec_rate": {
+      "min": 39.0,
+      "max": 809.0,
+      "median": 96.0
+    }
+  },
+  "n_model": 246,
+  "n_panel": 250,
+  "prevalence": 0.1991869918699187,
+  "gap_cutoff": -25.407283110307645,
+  "best_model": "Weighted Soft Voting (LR+XGB+LGBM)",
+  "threshold": 0.30856223077842077,
+  "auroc": 0.888,
+  "mean_ok_rate": 91.2480303232853,
+  "mean_busy_rate": 11.957736673371887,
+  "n_triple": 9
+}

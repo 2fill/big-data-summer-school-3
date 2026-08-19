@@ -5,7 +5,8 @@
 data/
 EVen/
 
-# 모델 산출물은 예외로 추적
+# 앱용 산출물은 예외로 추적
+!artifacts/*.csv
 !artifacts/*.json
 
 # 파이썬
