@@ -8,6 +8,12 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+import base64
+
+@st.cache_data
+def logo_b64():
+    return base64.b64encode(
+        (Path(__file__).parent / 'logo_animated.png').read_bytes()).decode()
 
 ARTIFACTS = Path(__file__).parent / 'artifacts'
 
@@ -129,9 +135,21 @@ LABELS = {
 LOG_FEATURES = {'log_reg': '대', 'log_pop': '명'}
 
 # ══════════════════════════════════════════════════════════
-st.markdown("""
+st.markdown(f"""
+<style>
+  .hero-row {{ display:flex; align-items:center; gap:24px; margin-bottom:16px; }}
+  .logo-img {{
+      width:200px; height:200px; flex-shrink:0; object-fit:contain;
+      filter: drop-shadow(0 4px 12px rgba(0,0,0,.15));
+  }}
+  .hero-row h1 {{ margin:0 !important; font-size:7rem !important; }}
+</style>
+
 <div class="hero">
-  <h1>EVen</h1>
+  <div class="hero-row">
+    <img class="logo-img" src="data:image/png;base64,{logo_b64()}" alt="EVen">
+    <h1>EVen</h1>
+  </div>
   <p>시군구별 전기차 등록대수 대비 충전 인프라 과부족을 개수·가동률·혼잡도 세 축에서 분석하고,<br>주택·인구·보조금 지표로 결핍 지역을 예측합니다.</p>
 </div>
 """, unsafe_allow_html=True)
