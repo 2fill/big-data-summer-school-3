@@ -37,6 +37,7 @@ st.markdown("""
 <style>
   @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
 
+  html { scroll-behavior:smooth; scroll-padding-top:20px; }
   html, body, [class*="css"] { font-family:'Pretendard', -apple-system, sans-serif; }
   .block-container { padding-top:2rem; max-width:1320px; }
 
@@ -70,11 +71,11 @@ st.markdown("""
   .stTabs [aria-selected="true"] { color:#33691E !important; background:#F1F8E9; }
   .stTabs [data-baseweb="tab-highlight"] { background-color:#7CB342; height:3px; }
 
-  .panel { border-radius:16px; padding:22px 26px; height:100%; }
-  .panel .tag { font-size:.75rem; font-weight:700; letter-spacing:1px;
-                text-transform:uppercase; opacity:.8; margin-bottom:10px; }
-  .panel .big { font-size:2.5rem; font-weight:800; line-height:1.1; margin:0; }
-  .panel .sub { font-size:.85rem; margin-top:8px; opacity:.85; }
+  .panel { border-radius:15px; padding:20px; min-height:200px; display:flex; flex-direction:column; justify-content:center; }
+  .panel .tag { font-size:1rem; font-weight:700; letter-spacing:1px;
+                text-transform:uppercase; opacity:1; margin-bottom:10px; }
+  .panel .big { font-size:2rem; font-weight:800; line-height:1.1; margin:0; }
+  .panel .sub { font-size:1rem; margin-top:8px; opacity:.85; }
 
   .panel-pred {
       background:linear-gradient(135deg,#7CB342,#558B2F); color:#fff;
@@ -143,6 +144,19 @@ st.markdown(f"""
       filter: drop-shadow(0 4px 12px rgba(0,0,0,.15));
   }}
   .hero-row h1 {{ margin:0 !important; font-size:7rem !important; }}
+  .cta {{
+      display:inline-flex; align-items:center; gap:8px; margin-top:22px;
+      background:#fff; color:#33691E !important; text-decoration:none;
+      padding:13px 30px; border-radius:30px;
+      font-weight:800; font-size:1rem;
+      box-shadow:0 4px 16px rgba(0,0,0,.16); transition:.2s;
+  }}
+  .cta:hover {{
+      transform:translateY(-2px);
+      box-shadow:0 8px 22px rgba(0,0,0,.24);
+  }}
+  .cta .arrow {{ transition:transform .2s; }}
+  .cta:hover .arrow {{ transform:translateX(4px); }}
 </style>
 
 <div class="hero">
@@ -151,6 +165,7 @@ st.markdown(f"""
     <h1>EVen</h1>
   </div>
   <p>시군구별 전기차 등록대수 대비 충전 인프라 과부족을 개수·가동률·혼잡도 세 축에서 분석하고,<br>주택·인구·보조금 지표로 결핍 지역을 예측합니다.</p>
+  <a class="cta" href="#simulator">이븐이 사용해보기 <span class="arrow">→</span></a>
 </div>
 """, unsafe_allow_html=True)
 
@@ -375,24 +390,43 @@ with tab4:
 st.divider()
 
 # ══════════════════════════════════════════════════════════
-st.header('결핍 예측 시뮬레이터')
+st.markdown('<div id="simulator"></div>', unsafe_allow_html=True)
+st.header('이븐이 시뮬레이터')
 st.markdown('사이드바에서 값을 조절하면 모델이 해당 조건의 지역을 '
             '**결핍으로 분류할 확률**을 실시간으로 계산합니다.')
 
-preset_options = ['(직접 입력)'] + sorted(
-    region.dropna(subset=FEATURES)['지역'].tolist())
-preset = st.selectbox('시군구 불러오기', preset_options,
-                      help='실제 지역의 값을 불러온 뒤 조절해볼 수 있습니다.')
+# 시도 → 시군구 2단계 선택
+avail = region.dropna(subset=FEATURES)
+SIDO_ORDER = ['서울', '경기', '인천', '강원', '충북', '충남', '대전', '세종',
+              '전북', '전남', '광주', '경북', '대구', '경남', '부산', '울산', '제주']
+sido_list = [s for s in SIDO_ORDER if s in set(avail['sido_short'])]
 
-if preset != '(직접 입력)':
-    row = region[region['지역'] == preset].iloc[0]
-    defaults = {f: float(row[f]) for f in FEATURES}
-else:
-    row = None
-    defaults = {f: stats[f]['median'] for f in FEATURES}
+st.markdown('**1. 시도 선택**')
+sido = st.radio('시도', sido_list, horizontal=True, label_visibility='collapsed')
+
+sgg_list = sorted(avail[avail['sido_short'] == sido]['sigungu'].tolist())
+st.markdown("<div style='margin-top:20px;'><b>2. 시군구 선택</b></div>",
+            unsafe_allow_html=True)
+
+sgg = st.radio('시군구', sgg_list, horizontal=True, label_visibility='collapsed')
+
+preset = f'{sido} {sgg}'
+row = avail[avail['지역'] == preset].iloc[0]
+defaults = {f: float(row[f]) for f in FEATURES}
+
+# 지역이 바뀌면 슬라이더를 그 지역 값으로 초기화
+if st.session_state.get('_preset') != preset:
+    st.session_state['_preset'] = preset
+    for f in FEATURES:
+        st.session_state.pop(f, None)
 
 st.sidebar.header('입력값 조절')
 st.sidebar.caption('슬라이더 범위는 학습 데이터의 실제 최소~최대입니다.')
+
+if st.sidebar.button(f'{preset} 값으로 되돌리기', use_container_width=True):
+    for f in FEATURES:
+        st.session_state.pop(f, None)
+    st.rerun()
 
 values = {}
 for f in FEATURES:
@@ -418,32 +452,15 @@ pred_txt = '결핍' if pred_deficit else '결핍 아님'
 actual = row.get('is_deficit') if row is not None else None
 has_actual = actual is not None and pd.notna(actual)
 
-col_g, col_pred, col_actual = st.columns([1.1, 1, 1])
-
-with col_g:
-    gauge = go.Figure(go.Indicator(
-        mode='gauge+number',
-        value=proba * 100,
-        number=dict(suffix='%', font=dict(size=38, color=LIME_DARK)),
-        gauge=dict(
-            axis=dict(range=[0, 100], tickcolor='#B0BEC5'),
-            bar=dict(color=LIME, thickness=.72),
-            bgcolor='#F5F7F2', borderwidth=0,
-            steps=[dict(range=[0, thresh * 100], color='#EDF2E7'),
-                   dict(range=[thresh * 100, 100], color='#FFEBEE')],
-            threshold=dict(line=dict(color=RED, width=3),
-                           thickness=.85, value=thresh * 100)),
-    ))
-    gauge.update_layout(**PLOT_LAYOUT, height=250)
-    st.plotly_chart(gauge, use_container_width=True)
-    st.caption(f'붉은 선이 판정 기준 {thresh:.1%}입니다.')
+st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
+col_pred, col_actual = st.columns(2)
 
 with col_pred:
     st.markdown(f"""
     <div class="panel panel-pred">
-      <div class="tag">MODEL PREDICTION</div>
-      <p class="big">{proba:.1%}</p>
-      <div class="sub">결핍 확률 · 판정 기준 {thresh:.1%}</div>
+      <div class="tag">이븐이의 예측</div>
+      <p class="big">{proba:.0%}</p>
+      <div class="sub">{thresh:.0%} 넘으면 부족</div>
       <div class="sub" style="margin-top:14px;">
         <span style="background:rgba(255,255,255,.22); padding:6px 14px;
               border-radius:20px; font-weight:700;">{pred_txt}</span>
@@ -453,15 +470,15 @@ with col_pred:
 
 with col_actual:
     if has_actual:
-        actual_txt = '결핍' if actual == 1 else '결핍 아님'
+        actual_txt = '부족한 동네' if actual == 1 else '부족하지 않음'
         chip = 'chip-deficit' if actual == 1 else 'chip-normal'
         st.markdown(f"""
         <div class="panel panel-actual">
-          <div class="tag">ACTUAL LABEL</div>
+          <div class="tag">실제 데이터</div>
           <p class="big">{actual_txt}</p>
-          <div class="sub">{preset} · 괴리율 하위 20% 기준</div>
+          <div class="sub">전국 하위 20%면 부족</div>
           <div class="sub" style="margin-top:14px;">
-            <span class="chip {chip}">실측 데이터</span>
+            <span class="chip {chip}">정답</span>
           </div>
         </div>
         """, unsafe_allow_html=True)
@@ -479,10 +496,5 @@ with col_actual:
 if has_actual:
     match = (actual == 1) == pred_deficit
     cls = 'verdict-match' if match else 'verdict-miss'
-    msg = ('모델 예측이 실제 라벨과 일치합니다.' if match
-           else '모델 예측이 실제 라벨과 다릅니다.')
-    st.markdown(f"""
-    <div class="verdict {cls}">{msg}
-      슬라이더를 움직이면 입력값이 실제 지역과 달라지므로 참고용입니다.
-    </div>
-    """, unsafe_allow_html=True)
+    msg = ('이븐이가 맞혔습니다!' if match
+           else '이븐이가 실수했어요 ㅠㅠ')
